@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 class IncompatibleStacking(Exception):
     """An exception for when two objects (braids, tangles, etc) cannot be stacked due to the number of strands"""
 
@@ -32,24 +33,24 @@ class Braid:
         def print_generator(g):
             if g == 0:
                 return "| " * (self.n - 1) + "|\n"
-            
+
             crossing = " / " if g > 0 else " \\ "
             g = -g if g < 0 else g
             s = "| " * (g - 1) + "\\ /" + " |" * (self.n - (g - 1) - 2) + "\n"
             s += "| " * (g - 1) + crossing + " |" * (self.n - (g - 1) - 2) + "\n"
             s += "| " * (g - 1) + "/ \\" + " |" * (self.n - (g - 1) - 2) + "\n"
             return s
-            
+
         s = ""
         for g in reversed(self.word):
             s = print_generator(0) + print_generator(g) + s
-         
+
         return s + print_generator(0)
 
     def reduced_string(self) -> str:
         def print_generators(gens):
             s = ""
-            for l in [0,1,2]:
+            for l in [0, 1, 2]:
                 for i in range(self.n):
                     if i + 1 in gens or -i - 1 in gens:
                         if l == 0:
@@ -67,15 +68,17 @@ class Braid:
                 s.removesuffix(" ")
                 s += "\n"
             return s
-        
+
         def is_adjacent_generator(g, a):
             return abs(abs(g) - abs(a)) <= 1 and g != 0 and a != 0
-        
+
         i = len(self.word) - 1
         s = ""
         while i >= 0:
-            gens:list[int] = []
-            while i >= 0 and not any(is_adjacent_generator(g, self.word[i]) for g in gens):
+            gens: list[int] = []
+            while i >= 0 and not any(
+                is_adjacent_generator(g, self.word[i]) for g in gens
+            ):
                 gens.append(self.word[i])
                 i -= 1
             s += "| " * (self.n - 1) + "|\n" + print_generators(gens)
@@ -103,8 +106,10 @@ class Braid:
                 return generator + shift
             else:
                 return generator - shift
-                
-        return Braid(self.n + b.n, self.word + [shift_generator(g, self.n) for g in b.word])
+
+        return Braid(
+            self.n + b.n, self.word + [shift_generator(g, self.n) for g in b.word]
+        )
 
     def conjoin_to_left(self, b: Braid):
         return b.conjoin_to_right(self)
@@ -115,7 +120,7 @@ class Braid:
             l = len(self.word)
             i = 0
             while i < len(self.word) - 1:
-                if self.word[i] == -self.word[i+1]:
+                if self.word[i] == -self.word[i + 1]:
                     self.word.pop(i)
                     self.word.pop(i)
                 else:
@@ -130,4 +135,3 @@ class Braid:
 
     def inverse(self):
         return Braid(self.n, [-g for g in reversed(self.word)])
-    
