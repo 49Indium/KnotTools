@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Literal
+from itertools import zip_longest
 
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -10,6 +11,59 @@ VisitStatus = Literal["Half", "Visited"]
 Edge = tuple[int, int]
 Loop = None
 Segment = Edge | Loop
+
+
+class Polynomial:
+    lowest_power: int
+    terms: list[int]
+
+    def __init__(self, lowest_power, terms) -> None:
+        self.lowest_power = lowest_power
+        self.terms = terms
+
+    def __repr__(self) -> str:
+        n = self.lowest_power
+        r = ""
+        for t in self.terms:
+            if n % 2 == 0:
+                r += f" + {t}t^{n // 2}"
+            else:
+                r += f" + {t}t^{n}/2"
+            n += 1
+        return r
+
+    def set_lowest_power(self, i: int):
+        n = max(0, self.lowest_power - i)
+        self.lowest_power = min(i, self.lowest_power)
+        self.terms = [0] * n + self.terms
+
+    def reduce_zero_terms(self):
+        i = 0
+        while self.terms and self.terms[0] == 0:
+            i += 1
+            self.lowest_power += 1
+            self.terms.pop(0)
+
+    def add(self, p: Polynomial):
+        self.set_lowest_power(p.lowest_power)
+        self.terms = [
+            a + b
+            for a, b in zip_longest(
+                self.terms,
+                [0] * max(0, p.lowest_power - self.lowest_power) + p.terms,
+                fillvalue=0,
+            )
+        ]
+        self.reduce_zero_terms()
+
+    def scale(self, k: int):
+        return Polynomial(self.lowest_power, [k * t for t in self.terms])
+
+    def subtract(self, p: Polynomial):
+        self.add(p.scale(-1))
+
+    def multiply_by_power(self, n: int):
+        return Polynomial(self.lowest_power + n, self.terms)
 
 
 def change_edge(edge: Segment, min: int, amount: int):
@@ -52,11 +106,11 @@ class TransverseCrossing:
             """
         else:
             return f"""
-                           {self.out_under}   {self.out_over}
+                           {self.out_over}   {self.out_under}
                             \\ /
                              \\
                             / \\
-                           {self.in_over}  {self.in_under}
+                           {self.in_under}  {self.in_over}
                 """
 
     def has_entry(self, edge: int) -> bool:
@@ -135,7 +189,7 @@ class SingularCrossing:
                     \\ /
                      o
                     / \\
-                   {self.entering[0]}  {self.entering[1]}
+                   {self.entering[1]}  {self.entering[0]}
         """
 
     def has_entry(self, edge: int) -> bool:
@@ -160,7 +214,7 @@ class SingularCrossing:
 
     def negative_version(self) -> TransverseCrossing:
         return TransverseCrossing(
-            self.exiting[0], self.exiting[1], self.entering[0], self.entering[1], False
+            self.exiting[1], self.exiting[0], self.entering[1], self.entering[0], False
         )
 
     def change_edge_indexes(self, min: int, amount: int) -> SingularCrossing:
@@ -215,7 +269,7 @@ class Knot:
         self.edges = edges
 
     def is_singular(self) -> bool:
-        return not any(isinstance(c, SingularCrossing) for c in self.crossings)
+        return any(isinstance(c, SingularCrossing) for c in self.crossings)
 
     def swap_crossing(self, index: int) -> Knot:
         crossing = self.crossings[index]
@@ -373,8 +427,118 @@ class Knot:
         for edge_index in sorted(list(component[1]), reverse=True):
             new_edges.pop(edge_index)
 
-        print(new_crossings, new_edges)
         return Knot(new_crossings, new_edges)
+
+    def remove_edges(self, edges: list[int]):
+        crossings = {}
+        for e in edges:
+            if self.edges[e][1] in crossings:
+                crossings[self.edges[e][1]] += 1
+            else:
+                crossings[self.edges[e][1]] = 1
+
+        new_crossings = list(self.crossings)
+        new_edges = list(self.edges)
+        for c, count in sorted(
+            list(crossings.items()), key=lambda x: x[0], reverse=True
+        ):
+            if count == 1:
+                strands = [s for s in new_crossings[c].strands() if s not in edges]
+                if strands[0] == strands[1]:
+                    new_edges[strands[0]] = None
+                else:
+                    a = [s for s in strands if new_edges[s][1] == c][0]
+                    b = [s for s in strands if new_edges[s][0] == c][0]
+                    new_edges[a] = (new_edges[a][0], new_edges[b][1])
+                    new_crossings[new_edges[a][1]] = new_crossings[
+                        new_edges[a][1]
+                    ].replace_input(b, a)
+                    new_edges.pop(b)
+                    edges = [(e - 1 if e > b else e) for e in edges]
+                    new_crossings = [
+                        c.change_edge_indexes(b, -1) for c in new_crossings
+                    ]
+
+                new_edges = [change_edge(e, c, -1) for e in new_edges]
+                new_crossings.pop(c)
+            else:
+                new_edges = [change_edge(e, c, -1) for e in new_edges]
+                new_crossings.pop(c)
+        for e in sorted(list(edges), reverse=True):
+            new_crossings = [c.change_edge_indexes(e, -1) for c in new_crossings]
+            new_edges.pop(e)
+        return Knot(new_crossings, new_edges)
+
+    def jones_polynomial(self) -> Polynomial:
+        if self.is_singular():
+            pos, neg = self.split_singular_crossings()
+            p = Polynomial(0, [])
+            for k in pos:
+                print(
+                    f"Calculated pos {k.crossings} {k.edges} to be {k.jones_polynomial()}"
+                )
+                p.add(k.jones_polynomial())
+            for k in neg:
+                print(
+                    f"Calculated neg {k.crossings} {k.edges} to be {k.jones_polynomial()}"
+                )
+                p.subtract(k.jones_polynomial())
+            return p
+
+        if not self.edges:
+            return Polynomial(0, [1])
+
+        if len(self.edges) == 1 and not self.edges[0]:
+            return Polynomial(0, [1])
+
+        if not self.edges[0]:
+            k = self.remove_component((set(), {0}))
+            p = Polynomial(0, [])
+            q = k.jones_polynomial()
+            p.subtract(q.multiply_by_power(1))
+            p.subtract(q.multiply_by_power(-1))
+            return p
+
+        seen_edges: set[int] = set()
+        seen_crossings: set[int] = set()
+        current_edge: int = 0
+
+        while current_edge not in seen_edges:
+            seen_edges.add(current_edge)
+            current_crossing = self.edges[current_edge][1]
+            if current_edge == self.crossings[current_crossing].in_over:
+                current_edge = self.crossings[current_crossing].out_over
+                seen_crossings.add(current_crossing)
+            elif current_crossing in seen_crossings:
+                current_edge = self.crossings[current_crossing].out_under
+            elif self.crossings[current_crossing].positive:
+                p = Polynomial(0, [])
+                r = self.swap_crossing(current_crossing).jones_polynomial()
+                p.add(r.multiply_by_power(4))
+                q = self.untwist_crossing(current_crossing).jones_polynomial()
+                p.add(q.multiply_by_power(3))
+                p.subtract(q.multiply_by_power(1))
+                return p
+            else:
+                p = Polynomial(0, [])
+                p.add(
+                    self.swap_crossing(current_crossing)
+                    .jones_polynomial()
+                    .multiply_by_power(-4)
+                )
+                q = self.untwist_crossing(current_crossing).jones_polynomial()
+                p.add(q.multiply_by_power(-3))
+                p.subtract(q.multiply_by_power(-1))
+                return p
+
+        k = self.remove_edges(list(seen_edges))
+        if not k.edges:
+            return Polynomial(0, [1])
+        p = Polynomial(0, [])
+        q = k.jones_polynomial()
+        p.subtract(q.multiply_by_power(1))
+        p.subtract(q.multiply_by_power(-1))
+        return p
 
     def draw(self):
         g = nx.MultiDiGraph()
@@ -439,6 +603,23 @@ trefoil = Knot(
         TransverseCrossing(2, 5, 1, 4, True),
     ],
     [(0, 1), (1, 2), (2, 0), (0, 1), (1, 2), (2, 0)],
+)
+two_chord = Knot(
+    [
+        SingularCrossing([5, 2], [0, 3]),
+        SingularCrossing([3, 0], [4, 1]),
+        TransverseCrossing(2, 5, 1, 4, True),
+    ],
+    [(0, 1), (1, 2), (2, 0), (0, 1), (1, 2), (2, 0)],
+)
+chord_3b = Knot(
+    [
+        SingularCrossing([4, 7], [5, 0]),
+        SingularCrossing([0, 3], [1, 4]),
+        TransverseCrossing(2, 7, 1, 6, True),
+        SingularCrossing([5, 2], [6, 3]),
+    ],
+    [(0, 1), (1, 2), (2, 3), (3, 1), (1, 0), (0, 3), (3, 2), (2, 0)],
 )
 trefoil_reversed = Knot(
     [
