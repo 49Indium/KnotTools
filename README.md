@@ -7,7 +7,7 @@ Allows you to represent knots, links and braids (tangles coming soon), combine t
 # Example Usage
 
 ```python
-import knots.knots as *
+from knots.knots import *
 
 # A bunch of knots are already included
 print(trefoil.jones_polynomial())
@@ -47,3 +47,7 @@ print(assignment_knot.jones_polynomial())
 # Returns -1t^-2 + 1t^-1 + 2t^0 + -1t^1 + -2t^2 + -1t^3 + 2t^4 + 1t^5 + -1t^6
 
 ```
+
+# Running Tests
+
+The package has both traditional unit tests and property-based tests (via [hypothesis](https://hypothesis.readthedocs.io/en/latest/index.html)). To run all tests, make sure hypothesis is installed and  use `python -m unittest`.
