@@ -30,21 +30,10 @@ assignment_knot = Knot(
 print(assignment_knot.jones_polynomial().modified_polynomial_coefficient(4))
 # Returns (-65, 2), which represents -65/2
 
-# One of the knots equivalent to the chord diagram corresponding to ABCDCBAD
-# Crossings can be singular or transverse
-chord_diagram_example = Knot(
-    [
-        SingularCrossing([9, 4], [0, 5]),
-        SingularCrossing([7, 0], [8, 1]),
-        SingularCrossing([1, 6], [2, 7]),
-        SingularCrossing([5, 2], [6, 3]),
-        TransverseCrossing(4, 9, 3, 8, True) # A positive crossing
-    ],
-    edges_from_sequence([0, 1, 2, 3, 4, 0, 3, 2, 1, 4, 0])
-)
-
-print(assignment_knot.jones_polynomial())
-# Returns -1t^-2 + 1t^-1 + 2t^0 + -1t^1 + -2t^2 + -1t^3 + 2t^4 + 1t^5 + -1t^6
+# You can also turn chord diagrams into knots via the "rubber band" map
+# This is the chord corresponding to the word "ABABCDCD"
+print(Chord([0, 1, 0, 1, 2, 3, 2, 3]).to_knot().jones_polynomial())
+# Returns 9
 
 ```
 
