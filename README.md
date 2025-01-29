@@ -32,7 +32,7 @@ print(assignment_knot.jones_polynomial().modified_polynomial_coefficient(4))
 
 # You can also turn chord diagrams into knots via the "rubber band" map
 # This is the chord corresponding to the word "ABABCDCD"
-print(Chord([0, 1, 0, 1, 2, 3, 2, 3]).to_knot().jones_polynomial())
+print(Chord([0, 1, 0, 1, 2, 3, 2, 3]).to_knot().jones_polynomial(4))
 # Returns 9
 
 ```
