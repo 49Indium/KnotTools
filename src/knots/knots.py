@@ -54,49 +54,94 @@ class Chord:
         if not self.word:
             return Knot([], [None])
 
-        bases = [
-            SingularCrossing([-1, -1], [-1, -1]) for _ in range(len(self.word) // 2)
-        ]
-
-        def adjust_base(c, i):
-            if bases[c].entering[0] == -1:
-                bases[c] = SingularCrossing([i, -1], [i + 1, -1])
-            else:
-                inn = bases[c].entering[0]
-                out = bases[c].exiting[0]
-                bases[c] = SingularCrossing([inn, i], [out, i + 1])
-
         ranges = []
 
         def add_range(max, over):
             ranges.append((max, over, []))
 
-        def split_edge(e, i, c):
+        def split_edge(e, i, c, over):
             max = e[0]
             is_over = e[1]
             prev_splits = e[2]
-            if i % 2 == 0:
-                if c > max:
-                    return e
-                return (max, is_over, sorted(list(prev_splits) + [i]))
+            if not over:
+                if is_over:
+                    if c > max:
+                        return e
+                    return (max, is_over, sorted(list(prev_splits) + [i]))
+                else:
+                    if c >= max:
+                        return e
+                    return (max, is_over, sorted(list(prev_splits) + [i]))
             else:
                 if c >= max:
                     return e
                 return (max, is_over, sorted(list(prev_splits) + [i]))
 
-        for i, c in enumerate(self.word[1:]):
+        for i, c in enumerate(self.word):
             for j, e in enumerate(ranges):
-                ranges[j] = split_edge(e, 2 * i, c)
+                ranges[j] = split_edge(e, 2 * i, c, False)
             add_range(c, False)
-            adjust_base(c, 2 * i)
-            for e in ranges:
-                split_edge(e, 2 * i + 1, c)
+            for j, e in enumerate(ranges):
+                ranges[j] = split_edge(e, 2 * i + 1, c, True)
             add_range(c, True)
 
-        # Add final edge
         crossings = []
         edges = []
 
+        visited_bases = {}
+
+        crossings.append(Midpoint(-1, 0))
+        edges.append((0, -1))
+        
+        for i, (max, is_over, splits) in enumerate(ranges):
+            if i % 2 == 0:
+                # Go across
+                for s in splits:
+                    crossing = TransverseCrossing(-s - 1, len(edges), -s - 1, len(edges) - 1, True)
+                    crossings.append(crossing)
+                    edges[-1] = (edges[-1][0], len(crossings) - 1)
+                    edges.append((len(crossings) - 1, -1))
+
+                # Go down
+                for j, c in reversed(list(enumerate(crossings))):
+                    if isinstance(c, TransverseCrossing) and c.out_under == -i - 1:
+                        edges[-1] = (edges[-1][0], j)
+                        crossings[j] = TransverseCrossing(len(edges), crossings[j].out_over, len(edges) - 1, crossings[j].in_over, not crossings[j].positive)
+                        edges.append((j, -1))
+
+                # Connect to base
+                if self.word[i//2] not in visited_bases:
+                    crossings.append(SingularCrossing([len(edges) - 1, -1], [len(edges), -1]))
+                    edges[-1] = (edges[-1][0], len(crossings) - 1)
+                    edges.append((len(crossings) - 1, -1))
+                    visited_bases[self.word[i//2]] = len(crossings) - 1
+                else:
+                    crossing_index = visited_bases[self.word[i//2]]
+                    crossing = crossings[crossing_index]
+                    crossings[crossing_index] = SingularCrossing([crossing.entering[0], len(edges) - 1], [crossing.exiting[0], len(edges)])
+                    edges[-1] = (edges[-1][0], crossing_index)
+                    edges.append((crossing_index, -1))
+                    
+            else:
+                # Go up                
+                for j, c in enumerate(crossings):
+                    if isinstance(c, TransverseCrossing) and c.out_under == -i - 1:
+                        edges[-1] = (edges[-1][0], j)
+                        crossings[j] = TransverseCrossing(len(edges), crossings[j].out_over, len(edges) - 1, crossings[j].in_over, crossings[j].positive)
+                        edges.append((j, -1))
+                        
+                # Go across
+                for s in reversed(splits):
+                    crossing = TransverseCrossing(-s - 1, len(edges), -s - 1, len(edges) - 1, False)
+                    crossings.append(crossing)
+                    edges[-1] = (edges[-1][0], len(crossings) - 1)
+                    edges.append((len(crossings) - 1, -1))
+        edges[-1] = (edges[-1][0], 0)
+        crossings[0] = Midpoint(len(edges) - 1, 0)
+
+        return Knot(crossings, edges).remove_midpoints()
+
+                    
 
 class TransverseCrossing:
     """
@@ -186,6 +231,49 @@ class TransverseCrossing:
         else:
             raise ValueError("Cannot replace edge that doesn't exist")
 
+class Midpoint:
+    """The midpoint of an edge. Not really a crossing"""
+    entering_edge: int
+    exiting_edge: int
+
+    def __init__(self, entering: int, exiting: int) -> None:
+        self.entering_edge = entering
+        self.exiting_edge = exiting
+
+    def __repr__(self) -> str:
+        return f" {self.entering_edge}--->---{self.exiting_edge}"
+
+    def has_entry(self, edge: int) -> bool:
+        return self.entering_edge == edge
+
+    def has_exit(self, edge: int) -> bool:
+        return self.exiting_edge == edge
+
+    def strands(self) -> list[int]:
+        return [self.entering_edge, self.exiting_edge]
+
+    def out_strands(self) -> list[int]:
+        return [self.exiting_edge]
+
+    def in_strands(self) -> list[int]:
+        return [self.entering_edge]
+
+    def next_edge(self, edge: int) -> int:
+        if edge == self.entering_edge:
+            return self.exiting_edge
+        else:
+            raise ValueError("Edge doesn't enter crossing")
+
+    def change_edge_indexes(self, min: int, amount: int) -> Midpoint:
+        """Increase all edge indexes strictly above min by amount"""
+        change_strand = lambda strand: strand + amount if strand > min else strand
+        return Midpoint(change_strand(self.entering_edge), change_strand(self.exiting_edge))
+
+    def replace_input(self, old_edge: int, new_edge: int) -> Midpoint:
+        if self.entering_edge == old_edge:
+            return Midpoint(new_edge, self.exiting_edge)
+        else:
+            raise ValueError("Cannot replace edge that doesn't exist")
 
 class SingularCrossing:
     """
@@ -249,9 +337,17 @@ class SingularCrossing:
             [change_strand(e) for e in self.entering],
             [change_strand(e) for e in self.exiting],
         )
+    
+    def replace_input(self, old_edge: int, new_edge: int) -> SingularCrossing:
+        if old_edge == self.entering[0]:
+            return SingularCrossing([new_edge, self.entering[1]], list(self.exiting))
+        elif old_edge == self.entering[1]:
+            return SingularCrossing([self.entering[0], new_edge], list(self.exiting))
+        else:
+            raise ValueError("Cannot replace edge that doesn't exist")
 
 
-Crossing = TransverseCrossing | SingularCrossing
+Crossing = TransverseCrossing | SingularCrossing | Midpoint
 
 
 class Knot:
@@ -297,6 +393,7 @@ class Knot:
         return any(isinstance(c, SingularCrossing) for c in self.crossings)
 
     def swap_crossing(self, index: int) -> Knot:
+        # TODO Rename to mirror image
         crossing = self.crossings[index]
         new_crossings = list(self.crossings)
         if isinstance(crossing, SingularCrossing):
@@ -319,14 +416,44 @@ class Knot:
             )
         return Knot(new_crossings, list(self.edges))
 
+    def remove_midpoints(self) -> Knot:
+        def remove_midpoint(k:Knot, index: int) -> Knot:
+            crossing = k.crossings[index]
+            new_crossings = list(k.crossings)
+            new_edges = list(k.edges)
+            
+            if not isinstance(crossing, Midpoint):
+                raise ValueError("Only midpoints can be removed")
+            if crossing.entering_edge == crossing.exiting_edge:
+                new_edges[crossing.entering_edge] = None
+                return Knot(new_crossings, new_edges)
+            
+            old_outer_edge = k.edges[crossing.exiting_edge]
+            new_crossings[old_outer_edge[1]] = new_crossings[old_outer_edge[1]].replace_input(crossing.exiting_edge, crossing.entering_edge)
+
+            new_edges.pop(crossing.exiting_edge)
+            new_crossings = [c.change_edge_indexes(crossing.exiting_edge, -1) for c in new_crossings]
+            
+            new_crossings.pop(index)
+            new_edges = [change_edge(e, index, -1) for e in new_edges]
+
+            return Knot(new_crossings, new_edges)
+        
+        k = self
+        while any(isinstance(c, Midpoint) for c in k.crossings):
+            i, _ = [(j, m) for (j, m) in enumerate(k.crossings) if isinstance(m, Midpoint)][0]
+            k = remove_midpoint(k, i)
+
+        return k
+
     def untwist_crossing(self, index: int) -> Knot:
+        # Change to smoothing?
         crossing = self.crossings[index]
         new_crossings = list(self.crossings)
         new_edges = list(self.edges)
         if isinstance(crossing, SingularCrossing):
             raise ValueError("You cannot untwist a singular crossing")
 
-        # TODO Do you need separate cases for left and right
         if crossing.out_under == crossing.in_over:
             new_edges[crossing.out_under] = None
         else:
